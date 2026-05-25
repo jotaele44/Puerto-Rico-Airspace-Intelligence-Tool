@@ -97,6 +97,26 @@ cd restored-repo
 git branch -a
 ```
 
+## Port to `jotaele44/spiderweb-pr`
+
+A ready-to-apply port to the upstream hub repo lives in `salvage/port-to-spiderweb-pr/`. Both deliverables have been dry-run applied against a fresh clone of `jotaele44/spiderweb-pr@main` — they apply with **zero conflicts**, verified before commit.
+
+| File | Purpose |
+|---|---|
+| `salvage/port-to-spiderweb-pr/airspace-producer-contract.patch` | Single combined unified diff (26K). Apply with `git apply` for one squashed commit. |
+| `salvage/port-to-spiderweb-pr/airspace-producer-contract.mbox` | 12 per-commit patches in mbox format (31K). Apply with `git am` to preserve the original 12-commit history and authorship. |
+| `salvage/port-to-spiderweb-pr/PORTING_INSTRUCTIONS.md` | Step-by-step recipe for the upstream maintainer: both apply paths, verification commands, optional README cross-link, optional CI smoke step, ready-to-paste PR description. |
+
+Quick verification of the deliverables (already done before commit):
+
+```bash
+# In a fresh clone of jotaele44/spiderweb-pr@main
+git apply --check salvage/port-to-spiderweb-pr/airspace-producer-contract.patch  # → no errors
+git mailsplit -o /tmp/mbox salvage/port-to-spiderweb-pr/airspace-producer-contract.mbox  # → 12 patches with original subjects
+```
+
+Neither I nor this PR pushes anything to `jotaele44/spiderweb-pr` — that's outside the GitHub MCP scope of this session. The patch + recipe are what enable that work to happen upstream.
+
 ## Deletion checklist
 
 Before clicking **Delete this repository** on `https://github.com/jorgegonzalez44/Puerto-Rico-Airspace-Intelligence-Tool/settings`:
