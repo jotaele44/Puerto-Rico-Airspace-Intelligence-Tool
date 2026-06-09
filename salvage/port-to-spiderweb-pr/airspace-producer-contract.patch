@@ -1,0 +1,704 @@
+diff --git a/docs/AIRSPACE_PRODUCER_EXPORT_TARGET.md b/docs/AIRSPACE_PRODUCER_EXPORT_TARGET.md
+new file mode 100644
+index 0000000..842518f
+--- /dev/null
++++ b/docs/AIRSPACE_PRODUCER_EXPORT_TARGET.md
+@@ -0,0 +1,103 @@
++# Airspace Producer Export Target
++
++ACTIVE_VECTOR: Puerto Rico Airspace producer export contract
++
++This document defines the target export package for the Puerto Rico Airspace Intelligence Tool as a PRIIS producer repo.
++
++## Boundary
++
++This repo produces airspace/screenshot/flight-event packages.
++
++It does not implement:
++
++- PRIIS hub ingestion,
++- Finance and contract reconciliation,
++- FOIA queue management,
++- Arcadis-style Analysis dossiers,
++- production UI/API/database services.
++
++## Required package layout
++
++```text
++manifest.json
++observations.geojson
++observations.csv
++sources.json
++lineage.json
++confidence.json
++```
++
++## Observation record fields
++
++| Field | Required | Notes |
++|---|---:|---|
++| observation_id | yes | Stable unique ID |
++| event_datetime | yes | ISO-8601 timestamp |
++| location_name | no | Human-readable location label |
++| municipality | no | Puerto Rico municipality if known |
++| lat | yes | WGS84 latitude |
++| lon | yes | WGS84 longitude |
++| altitude_ft | no | Altitude if available |
++| bearing | no | Direction if available |
++| duration_seconds | no | Duration if available |
++| signal_type | yes | Example: FR24_SCREENSHOT, ADSB, RADAR, FIELD_REPORT |
++| description_summary | no | Short neutral description |
++| source_id | yes | Must link to sources.json |
++| source_type | yes | screenshot, adsb, radar, official, field_note, secondary |
++| evidence_tier | yes | T1, T2, T3, or T4 |
++| confidence | yes | 0.0 to 1.0 |
++| geometry_status | yes | located, approximate, unlocated, invalid |
++| temporal_status | yes | exact, approximate, missing, invalid |
++| lineage_id | yes | Must link to lineage.json |
++| synthetic | yes | Boolean test/prod separation flag |
++
++## Evidence tiers
++
++| Tier | Meaning |
++|---|---|
++| T1 | Technical, sensor-derived, official, or machine-verifiable evidence |
++| T2 | Operational or official structured source |
++| T3 | Witness, field observation, or analyst note |
++| T4 | Secondary/context/lead-generation only |
++
++## Validation rules
++
++Fail if:
++
++- manifest.json is missing,
++- schema_version is missing,
++- observations file is missing,
++- source_id is missing,
++- lineage_id is missing,
++- confidence is missing or outside 0.0 to 1.0,
++- event_datetime is missing or unparsable,
++- evidence_tier is not T1/T2/T3/T4,
++- lat/lon is missing for located or approximate records,
++- geometry_status is unsupported,
++- temporal_status is unsupported,
++- synthetic=true appears in production mode,
++- source provenance is missing,
++- lineage metadata is missing.
++
++## Production mode rule
++
++Synthetic fixtures are allowed only in test mode.
++
++Production validation must fail closed if any observation has:
++
++```json
++"synthetic": true
++```
++
++## Test package requirement
++
++The synthetic fixture package must pass in test mode and fail in production mode.
++
++## Future extension queue
++
++1. screenshot inventory with SHA-256,
++2. manual review queue,
++3. route extraction,
++4. coordinate uncertainty model,
++5. integration report,
++6. hub export adapter.
+diff --git a/docs/UPSTREAM_COMPONENT_REUSE_MATRIX.md b/docs/UPSTREAM_COMPONENT_REUSE_MATRIX.md
+new file mode 100644
+index 0000000..51d09bb
+--- /dev/null
++++ b/docs/UPSTREAM_COMPONENT_REUSE_MATRIX.md
+@@ -0,0 +1,58 @@
++# Upstream Component Reuse Matrix
++
++ACTIVE_VECTOR: Puerto Rico Airspace producer export contract
++
++Purpose: decide what to reuse from existing Puerto Rico intelligence repos before porting code.
++
++Rule: extract patterns first. Do not merge codebases.
++
++## Classification keys
++
++| Status | Meaning |
++|---|---|
++| ADOPT | Safe to reuse mostly as-is after review |
++| ADAPT | Useful but must be refactored for this repo |
++| REFERENCE | Use as a design pattern only |
++| BLOCK | Do not import for this vector |
++
++## Component matrix
++
++| Source | Component | Decision | Reason |
++|---|---|---|---|
++| Contract-Sweeper | Step-based pipeline flow | REFERENCE | Strong setup, validation, normalization, coverage sequence |
++| Contract-Sweeper | run_all.py orchestration pattern | ADAPT | Useful CLI pattern, but airspace commands differ |
++| Contract-Sweeper | download validation pattern | ADAPT | Good gate model for required files and column families |
++| Contract-Sweeper | coverage report idea | REFERENCE | Useful for export completeness, not contract-specific logic |
++| Contract-Sweeper | federal contract ingestion code | BLOCK | Finance pipeline belongs outside this repo |
++| spiderweb-pr | screenshot inventory with hashes | ADAPT | Directly relevant to FR24/screenshot evidence provenance |
++| spiderweb-pr | schema validation and review queue pattern | ADAPT | Needed for fail-closed validation and manual review routing |
++| spiderweb-pr | PR Intel adapter/export manifest pattern | REFERENCE | Good export discipline; this repo needs a narrower contract |
++| spiderweb-pr | route extraction / event export ideas | ADAPT | Useful after schema and fixture validation are locked |
++| spiderweb-pr | dashboard files | BLOCK | UI is premature for this foundation vector |
++| spiderweb-pr | broad mission inference stack | BLOCK | Must wait until evidence, confidence, and provenance layers pass |
++| PR.INT | CRS and geometry validation discipline | REFERENCE | Useful for Puerto Rico spatial exports and map alignment |
++| PR.INT | municipal/context joins | REFERENCE | Hub or GIS producer concern unless needed for export enrichment |
++| PR.INT | full GIS stack | BLOCK | Too broad for the airspace producer foundation |
++| PRIIS design | federation and readiness gates | REFERENCE | Defines hub boundary and producer export requirements |
++| PRIIS Analysis dossier | evidence-tier and completeness concepts | REFERENCE | Output belongs in hub Analysis, not this producer repo |
++
++## Immediate adoption set
++
++Implement only:
++
++1. export package contract,
++2. observation schema,
++3. manifest schema,
++4. synthetic fixture package,
++5. validator script,
++6. tests proving test-mode pass and production-mode fail for synthetic data.
++
++## Deferred queue
++
++| Queue item | Condition to start |
++|---|---|
++| screenshot inventory port | after export validator passes |
++| manual review queue | after validation failure taxonomy is stable |
++| route extraction | after screenshot inventory and geometry uncertainty rules exist |
++| integration report | after validator produces structured results |
++| dashboard/API | blocked until producer contract and hub gates exist |
+diff --git a/exports/examples/synthetic_airspace_package/confidence.json b/exports/examples/synthetic_airspace_package/confidence.json
+new file mode 100644
+index 0000000..f63b1d5
+--- /dev/null
++++ b/exports/examples/synthetic_airspace_package/confidence.json
+@@ -0,0 +1,24 @@
++[
++  {
++    "observation_id": "syn-air-0001",
++    "overall_confidence": 0.82,
++    "field_confidence": {
++      "event_datetime": 0.95,
++      "lat": 0.80,
++      "lon": 0.80,
++      "municipality": 0.75,
++      "signal_type": 0.90
++    }
++  },
++  {
++    "observation_id": "syn-air-0002",
++    "overall_confidence": 0.78,
++    "field_confidence": {
++      "event_datetime": 0.95,
++      "lat": 0.76,
++      "lon": 0.76,
++      "municipality": 0.72,
++      "signal_type": 0.90
++    }
++  }
++]
+diff --git a/exports/examples/synthetic_airspace_package/lineage.json b/exports/examples/synthetic_airspace_package/lineage.json
+new file mode 100644
+index 0000000..35f7e07
+--- /dev/null
++++ b/exports/examples/synthetic_airspace_package/lineage.json
+@@ -0,0 +1,20 @@
++[
++  {
++    "lineage_id": "lin-syn-0001",
++    "observation_id": "syn-air-0001",
++    "source_id": "src-syn-0001",
++    "pipeline_stage": "synthetic_fixture_generation",
++    "extraction_method": "manual_fixture",
++    "coordinate_method": "synthetic_wgs84_point",
++    "notes": "Synthetic fixture for validator development only."
++  },
++  {
++    "lineage_id": "lin-syn-0002",
++    "observation_id": "syn-air-0002",
++    "source_id": "src-syn-0002",
++    "pipeline_stage": "synthetic_fixture_generation",
++    "extraction_method": "manual_fixture",
++    "coordinate_method": "synthetic_wgs84_point",
++    "notes": "Synthetic fixture for validator development only."
++  }
++]
+diff --git a/exports/examples/synthetic_airspace_package/manifest.json b/exports/examples/synthetic_airspace_package/manifest.json
+new file mode 100644
+index 0000000..ee4d281
+--- /dev/null
++++ b/exports/examples/synthetic_airspace_package/manifest.json
+@@ -0,0 +1,21 @@
++{
++  "schema_version": "priis.airspace_export.v0.1",
++  "producer": "Puerto-Rico-Airspace-Intelligence-Tool",
++  "package_id": "synthetic_airspace_package_v0_1",
++  "created_at": "2026-05-20T00:00:00Z",
++  "mode": "test",
++  "description": "Synthetic PRIIS airspace producer fixture for validator development. Not production data.",
++  "files": {
++    "observations_geojson": "observations.geojson",
++    "observations_csv": "observations.csv",
++    "sources": "sources.json",
++    "lineage": "lineage.json",
++    "confidence": "confidence.json"
++  },
++  "record_counts": {
++    "observations": 2,
++    "sources": 2,
++    "lineage": 2,
++    "confidence": 2
++  }
++}
+diff --git a/exports/examples/synthetic_airspace_package/observations.csv b/exports/examples/synthetic_airspace_package/observations.csv
+new file mode 100644
+index 0000000..246222c
+--- /dev/null
++++ b/exports/examples/synthetic_airspace_package/observations.csv
+@@ -0,0 +1,3 @@
++observation_id,event_datetime,location_name,municipality,lat,lon,altitude_ft,bearing,duration_seconds,signal_type,description_summary,source_id,source_type,evidence_tier,confidence,geometry_status,temporal_status,lineage_id,synthetic
++syn-air-0001,2026-05-20T10:00:00Z,Synthetic San Juan airspace point,San Juan,18.4394,-66.0012,2500,90,180,FR24_SCREENSHOT,Synthetic screenshot-derived airspace observation for validator testing.,src-syn-0001,screenshot,T2,0.82,approximate,exact,lin-syn-0001,true
++syn-air-0002,2026-05-20T10:15:00Z,Synthetic Aguadilla airspace point,Aguadilla,18.4949,-67.1299,3200,245,240,FR24_SCREENSHOT,Synthetic second observation for package-level validation.,src-syn-0002,screenshot,T2,0.78,approximate,exact,lin-syn-0002,true
+diff --git a/exports/examples/synthetic_airspace_package/observations.geojson b/exports/examples/synthetic_airspace_package/observations.geojson
+new file mode 100644
+index 0000000..7122f2d
+--- /dev/null
++++ b/exports/examples/synthetic_airspace_package/observations.geojson
+@@ -0,0 +1,55 @@
++{
++  "type": "FeatureCollection",
++  "features": [
++    {
++      "type": "Feature",
++      "geometry": {"type": "Point", "coordinates": [-66.0012, 18.4394]},
++      "properties": {
++        "observation_id": "syn-air-0001",
++        "event_datetime": "2026-05-20T10:00:00Z",
++        "location_name": "Synthetic San Juan airspace point",
++        "municipality": "San Juan",
++        "lat": 18.4394,
++        "lon": -66.0012,
++        "altitude_ft": 2500,
++        "bearing": 90,
++        "duration_seconds": 180,
++        "signal_type": "FR24_SCREENSHOT",
++        "description_summary": "Synthetic screenshot-derived airspace observation for validator testing.",
++        "source_id": "src-syn-0001",
++        "source_type": "screenshot",
++        "evidence_tier": "T2",
++        "confidence": 0.82,
++        "geometry_status": "approximate",
++        "temporal_status": "exact",
++        "lineage_id": "lin-syn-0001",
++        "synthetic": true
++      }
++    },
++    {
++      "type": "Feature",
++      "geometry": {"type": "Point", "coordinates": [-67.1299, 18.4949]},
++      "properties": {
++        "observation_id": "syn-air-0002",
++        "event_datetime": "2026-05-20T10:15:00Z",
++        "location_name": "Synthetic Aguadilla airspace point",
++        "municipality": "Aguadilla",
++        "lat": 18.4949,
++        "lon": -67.1299,
++        "altitude_ft": 3200,
++        "bearing": 245,
++        "duration_seconds": 240,
++        "signal_type": "FR24_SCREENSHOT",
++        "description_summary": "Synthetic second observation for package-level validation.",
++        "source_id": "src-syn-0002",
++        "source_type": "screenshot",
++        "evidence_tier": "T2",
++        "confidence": 0.78,
++        "geometry_status": "approximate",
++        "temporal_status": "exact",
++        "lineage_id": "lin-syn-0002",
++        "synthetic": true
++      }
++    }
++  ]
++}
+diff --git a/exports/examples/synthetic_airspace_package/sources.json b/exports/examples/synthetic_airspace_package/sources.json
+new file mode 100644
+index 0000000..4a6350c
+--- /dev/null
++++ b/exports/examples/synthetic_airspace_package/sources.json
+@@ -0,0 +1,18 @@
++[
++  {
++    "source_id": "src-syn-0001",
++    "source_type": "screenshot",
++    "source_path": "synthetic/fr24_san_juan_0001.png",
++    "sha256": "synthetic-sha256-placeholder-0001",
++    "retrieved_at": "2026-05-20T00:00:00Z",
++    "provenance_status": "synthetic_fixture"
++  },
++  {
++    "source_id": "src-syn-0002",
++    "source_type": "screenshot",
++    "source_path": "synthetic/fr24_aguadilla_0002.png",
++    "sha256": "synthetic-sha256-placeholder-0002",
++    "retrieved_at": "2026-05-20T00:00:00Z",
++    "provenance_status": "synthetic_fixture"
++  }
++]
+diff --git a/schemas/airspace_export_manifest.schema.json b/schemas/airspace_export_manifest.schema.json
+new file mode 100644
+index 0000000..4a74e0a
+--- /dev/null
++++ b/schemas/airspace_export_manifest.schema.json
+@@ -0,0 +1,47 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://priis.local/schemas/airspace_export_manifest.schema.json",
++  "title": "PRIIS Airspace Export Manifest",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schema_version",
++    "producer",
++    "package_id",
++    "created_at",
++    "mode",
++    "files",
++    "record_counts"
++  ],
++  "properties": {
++    "schema_version": {"type": "string", "minLength": 1},
++    "producer": {"type": "string", "const": "Puerto-Rico-Airspace-Intelligence-Tool"},
++    "package_id": {"type": "string", "minLength": 1},
++    "created_at": {"type": "string", "format": "date-time"},
++    "mode": {"type": "string", "enum": ["test", "production"]},
++    "description": {"type": ["string", "null"]},
++    "files": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": ["observations_geojson", "observations_csv", "sources", "lineage", "confidence"],
++      "properties": {
++        "observations_geojson": {"type": "string"},
++        "observations_csv": {"type": "string"},
++        "sources": {"type": "string"},
++        "lineage": {"type": "string"},
++        "confidence": {"type": "string"}
++      }
++    },
++    "record_counts": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": ["observations", "sources", "lineage", "confidence"],
++      "properties": {
++        "observations": {"type": "integer", "minimum": 0},
++        "sources": {"type": "integer", "minimum": 0},
++        "lineage": {"type": "integer", "minimum": 0},
++        "confidence": {"type": "integer", "minimum": 0}
++      }
++    }
++  }
++}
+diff --git a/schemas/airspace_observation.schema.json b/schemas/airspace_observation.schema.json
+new file mode 100644
+index 0000000..be43080
+--- /dev/null
++++ b/schemas/airspace_observation.schema.json
+@@ -0,0 +1,46 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://priis.local/schemas/airspace_observation.schema.json",
++  "title": "PRIIS Airspace Observation",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "observation_id",
++    "event_datetime",
++    "lat",
++    "lon",
++    "signal_type",
++    "source_id",
++    "source_type",
++    "evidence_tier",
++    "confidence",
++    "geometry_status",
++    "temporal_status",
++    "lineage_id",
++    "synthetic"
++  ],
++  "properties": {
++    "observation_id": {"type": "string", "minLength": 1},
++    "event_datetime": {"type": "string", "format": "date-time"},
++    "location_name": {"type": ["string", "null"]},
++    "municipality": {"type": ["string", "null"]},
++    "lat": {"type": "number", "minimum": -90, "maximum": 90},
++    "lon": {"type": "number", "minimum": -180, "maximum": 180},
++    "altitude_ft": {"type": ["number", "null"]},
++    "bearing": {"type": ["number", "null"], "minimum": 0, "maximum": 360},
++    "duration_seconds": {"type": ["number", "null"], "minimum": 0},
++    "signal_type": {"type": "string", "minLength": 1},
++    "description_summary": {"type": ["string", "null"]},
++    "source_id": {"type": "string", "minLength": 1},
++    "source_type": {
++      "type": "string",
++      "enum": ["screenshot", "adsb", "radar", "official", "field_note", "secondary"]
++    },
++    "evidence_tier": {"type": "string", "enum": ["T1", "T2", "T3", "T4"]},
++    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
++    "geometry_status": {"type": "string", "enum": ["located", "approximate", "unlocated", "invalid"]},
++    "temporal_status": {"type": "string", "enum": ["exact", "approximate", "missing", "invalid"]},
++    "lineage_id": {"type": "string", "minLength": 1},
++    "synthetic": {"type": "boolean"}
++  }
++}
+diff --git a/scripts/validate_airspace_export.py b/scripts/validate_airspace_export.py
+new file mode 100644
+index 0000000..0dafa04
+--- /dev/null
++++ b/scripts/validate_airspace_export.py
+@@ -0,0 +1,221 @@
++#!/usr/bin/env python3
++"""Validate a PRIIS airspace producer export package.
++
++This validator is intentionally small and dependency-light. It checks the
++required package files, core observation fields, source/lineage/confidence
++references, and the test-vs-production synthetic-data boundary.
++"""
++
++from __future__ import annotations
++
++import argparse
++import csv
++import json
++import sys
++from datetime import datetime
++from pathlib import Path
++from typing import Any
++
++ALLOWED_EVIDENCE_TIERS = {"T1", "T2", "T3", "T4"}
++ALLOWED_GEOMETRY_STATUS = {"located", "approximate", "unlocated", "invalid"}
++ALLOWED_TEMPORAL_STATUS = {"exact", "approximate", "missing", "invalid"}
++REQUIRED_PACKAGE_FILES = {
++    "manifest.json",
++    "observations.geojson",
++    "observations.csv",
++    "sources.json",
++    "lineage.json",
++    "confidence.json",
++}
++REQUIRED_OBSERVATION_FIELDS = {
++    "observation_id",
++    "event_datetime",
++    "lat",
++    "lon",
++    "signal_type",
++    "source_id",
++    "source_type",
++    "evidence_tier",
++    "confidence",
++    "geometry_status",
++    "temporal_status",
++    "lineage_id",
++    "synthetic",
++}
++
++
++def load_json(path: Path) -> Any:
++    with path.open("r", encoding="utf-8") as handle:
++        return json.load(handle)
++
++
++def parse_bool(value: Any) -> bool:
++    if isinstance(value, bool):
++        return value
++    if isinstance(value, str):
++        lowered = value.strip().lower()
++        if lowered in {"true", "1", "yes"}:
++            return True
++        if lowered in {"false", "0", "no"}:
++            return False
++    raise ValueError(f"invalid boolean value: {value!r}")
++
++
++def parse_float(value: Any, field_name: str) -> float:
++    try:
++        return float(value)
++    except (TypeError, ValueError) as exc:
++        raise ValueError(f"{field_name} must be numeric") from exc
++
++
++def validate_datetime(value: Any) -> None:
++    if not isinstance(value, str) or not value.strip():
++        raise ValueError("event_datetime is required")
++    normalized = value.replace("Z", "+00:00")
++    datetime.fromisoformat(normalized)
++
++
++def load_observations(package_dir: Path) -> list[dict[str, Any]]:
++    geojson = load_json(package_dir / "observations.geojson")
++    if geojson.get("type") != "FeatureCollection":
++        raise ValueError("observations.geojson must be a FeatureCollection")
++
++    observations: list[dict[str, Any]] = []
++    for index, feature in enumerate(geojson.get("features", []), start=1):
++        props = feature.get("properties") or {}
++        if not isinstance(props, dict):
++            raise ValueError(f"feature {index} is missing properties")
++        observations.append(props)
++    return observations
++
++
++def load_csv_ids(package_dir: Path) -> set[str]:
++    with (package_dir / "observations.csv").open("r", encoding="utf-8", newline="") as handle:
++        reader = csv.DictReader(handle)
++        return {row.get("observation_id", "") for row in reader}
++
++
++def validate_package(package_dir: Path, mode: str) -> list[str]:
++    errors: list[str] = []
++
++    if not package_dir.exists() or not package_dir.is_dir():
++        return [f"package directory does not exist: {package_dir}"]
++
++    missing_files = sorted(name for name in REQUIRED_PACKAGE_FILES if not (package_dir / name).exists())
++    if missing_files:
++        errors.append(f"missing required files: {', '.join(missing_files)}")
++        return errors
++
++    try:
++        manifest = load_json(package_dir / "manifest.json")
++    except Exception as exc:  # noqa: BLE001
++        return [f"manifest.json is invalid JSON: {exc}"]
++
++    if not manifest.get("schema_version"):
++        errors.append("manifest schema_version is required")
++    if manifest.get("producer") != "Puerto-Rico-Airspace-Intelligence-Tool":
++        errors.append("manifest producer must be Puerto-Rico-Airspace-Intelligence-Tool")
++    if manifest.get("mode") not in {"test", "production"}:
++        errors.append("manifest mode must be test or production")
++
++    try:
++        observations = load_observations(package_dir)
++    except Exception as exc:  # noqa: BLE001
++        return errors + [f"observations.geojson is invalid: {exc}"]
++
++    try:
++        csv_ids = load_csv_ids(package_dir)
++    except Exception as exc:  # noqa: BLE001
++        errors.append(f"observations.csv is invalid: {exc}")
++        csv_ids = set()
++
++    try:
++        sources = {item["source_id"] for item in load_json(package_dir / "sources.json")}
++    except Exception as exc:  # noqa: BLE001
++        errors.append(f"sources.json is invalid: {exc}")
++        sources = set()
++
++    try:
++        lineage = {item["lineage_id"] for item in load_json(package_dir / "lineage.json")}
++    except Exception as exc:  # noqa: BLE001
++        errors.append(f"lineage.json is invalid: {exc}")
++        lineage = set()
++
++    try:
++        confidence_rows = {item["observation_id"] for item in load_json(package_dir / "confidence.json")}
++    except Exception as exc:  # noqa: BLE001
++        errors.append(f"confidence.json is invalid: {exc}")
++        confidence_rows = set()
++
++    for index, obs in enumerate(observations, start=1):
++        obs_id = obs.get("observation_id", f"feature-{index}")
++        missing = sorted(field for field in REQUIRED_OBSERVATION_FIELDS if field not in obs or obs[field] in {"", None})
++        if missing:
++            errors.append(f"{obs_id}: missing required fields: {', '.join(missing)}")
++            continue
++
++        try:
++            validate_datetime(obs["event_datetime"])
++        except ValueError as exc:
++            errors.append(f"{obs_id}: {exc}")
++
++        lat = parse_float(obs.get("lat"), "lat")
++        lon = parse_float(obs.get("lon"), "lon")
++        if not -90 <= lat <= 90:
++            errors.append(f"{obs_id}: lat outside valid range")
++        if not -180 <= lon <= 180:
++            errors.append(f"{obs_id}: lon outside valid range")
++
++        confidence = parse_float(obs.get("confidence"), "confidence")
++        if not 0 <= confidence <= 1:
++            errors.append(f"{obs_id}: confidence outside 0.0-1.0")
++
++        if obs.get("evidence_tier") not in ALLOWED_EVIDENCE_TIERS:
++            errors.append(f"{obs_id}: unsupported evidence_tier")
++        if obs.get("geometry_status") not in ALLOWED_GEOMETRY_STATUS:
++            errors.append(f"{obs_id}: unsupported geometry_status")
++        if obs.get("temporal_status") not in ALLOWED_TEMPORAL_STATUS:
++            errors.append(f"{obs_id}: unsupported temporal_status")
++        if obs.get("source_id") not in sources:
++            errors.append(f"{obs_id}: source_id not found in sources.json")
++        if obs.get("lineage_id") not in lineage:
++            errors.append(f"{obs_id}: lineage_id not found in lineage.json")
++        if obs_id not in confidence_rows:
++            errors.append(f"{obs_id}: confidence row not found in confidence.json")
++        if csv_ids and obs_id not in csv_ids:
++            errors.append(f"{obs_id}: observation missing from observations.csv")
++
++        try:
++            is_synthetic = parse_bool(obs.get("synthetic"))
++        except ValueError as exc:
++            errors.append(f"{obs_id}: {exc}")
++            is_synthetic = False
++        if mode == "production" and is_synthetic:
++            errors.append(f"{obs_id}: synthetic rows are not allowed in production mode")
++
++    return errors
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Validate a PRIIS airspace export package")
++    parser.add_argument("package_dir", type=Path)
++    parser.add_argument("--mode", choices=["test", "production"], default="test")
++    args = parser.parse_args()
++
++    try:
++        errors = validate_package(args.package_dir, args.mode)
++    except ValueError as exc:
++        errors = [str(exc)]
++
++    if errors:
++        print("VALIDATION FAILED")
++        for error in errors:
++            print(f"- {error}")
++        return 1
++
++    print("VALIDATION PASSED")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_validate_airspace_export.py b/tests/test_validate_airspace_export.py
+new file mode 100644
+index 0000000..fe34910
+--- /dev/null
++++ b/tests/test_validate_airspace_export.py
+@@ -0,0 +1,16 @@
++from pathlib import Path
++
++from scripts.validate_airspace_export import validate_package
++
++
++PACKAGE_DIR = Path("exports/examples/synthetic_airspace_package")
++
++
++def test_synthetic_package_passes_in_test_mode():
++    assert validate_package(PACKAGE_DIR, "test") == []
++
++
++def test_synthetic_package_fails_in_production_mode():
++    errors = validate_package(PACKAGE_DIR, "production")
++    assert errors
++    assert any("synthetic rows are not allowed" in error for error in errors)
